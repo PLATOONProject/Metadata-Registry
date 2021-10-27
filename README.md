@@ -59,7 +59,7 @@ The certificate needs to be of *.crt* format and must have the name *server.crt*
 			mv server.key cert/
 
 ### 4.2 Running The Broker
-To run the broker you can either make use of docker images provided by us as shown in **Section 4.2.1** or build your customized docker as shown in **Section 4.2.2**.
+To run the broker you can either make use of docker images provided by us as shown in **Section 4.2.1** 
 
 #### 4.2.1 Running The Broker With Provided Image
 If you want to run the broker with the provided image please follow the following steps:
