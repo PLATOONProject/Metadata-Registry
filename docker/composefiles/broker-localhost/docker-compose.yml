@@ -1,19 +1,19 @@
 version: '3'
 services:
   broker-reverseproxy:
-    image: registry.gitlab.cc-asp.fraunhofer.de:4567/eis-ids/broker-open/reverseproxy
+    image: registry.gitlab.cc-asp.fraunhofer.de/tmorbagalh/apphandler/broker-open/reverseproxy:4.1.4
     volumes:
       - /etc/idscert/localhost:/etc/cert/
-#      - c:/etc/idscert/localhost:/etc/cert/
+#       - c:/etc/idscert/localhost:/etc/cert/
     ports:
     - "443:443" # IDS-HTTP API
     - "80:80"
 
   broker-core:
-    image: registry.gitlab.cc-asp.fraunhofer.de:4567/eis-ids/broker-open/core
+    image: registry.gitlab.cc-asp.fraunhofer.de/tmorbagalh/apphandler/broker-open/core:v1
     volumes:
       - /etc/idscert/localhost:/etc/cert/
-#      - c:/etc/idscert/localhost:/etc/cert/
+#       - c:/etc/idscert/localhost:/etc/cert/
     restart: always
     environment:
     - SPARQL_ENDPOINT=http://broker-fuseki:3030/connectorData
@@ -26,7 +26,7 @@ services:
     - "8080"
 
   broker-fuseki:
-    image: registry.gitlab.cc-asp.fraunhofer.de:4567/eis-ids/broker-open/fuseki
+    image: registry.gitlab.cc-asp.fraunhofer.de/tmorbagalh/apphandler/broker-open/fuseki:4.1.4
     volumes:
       - broker-fuseki:/fuseki
     expose:
@@ -34,3 +34,4 @@ services:
 
 volumes:
     broker-fuseki:
+
