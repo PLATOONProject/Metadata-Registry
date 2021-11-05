@@ -57,7 +57,7 @@ public class AppPersistence extends AppPersistenceAdapter {
      * Setter for the indexing method
      * @param indexing indexing to be used
      */
-    public void setIndexing(Indexing indexing) {
+    public void setIndexing(Indexing<InfrastructureComponent> indexing) {
         this.indexing = indexing;
     }
 
@@ -121,7 +121,15 @@ public class AppPersistence extends AppPersistenceAdapter {
 
                     //Check done if res is a Appresource instead of Resource
 
-                    .append("?res a ids:AppResource ; ").append("?p ?o . } }");
+                    .append("{ ?res a ids:AppResource . }"
+                            + " UNION { ?res a ids:TextResource . }"
+                            + " UNION { ?res a ids:Resource . }"
+                            + " UNION { ?res a ids:DataResource . } \n"
+                            + "  UNION { ?res a ids:AudioResource . } \n"
+                            + "  UNION { ?res a ids:ImageResource . } \n"
+                            + "  UNION { ?res a ids:VideoResource . } \n"
+                            + "  UNION { ?res a ids:SoftwareResource . }").append("?res ?p ?o . } }");
+
             ParameterizedSparqlString parameterizedSparqlString = new ParameterizedSparqlString(queryString.toString());
             //Replace variable securely
             parameterizedSparqlString.setIri("res", resourceUri.toString());
@@ -145,20 +153,30 @@ public class AppPersistence extends AppPersistenceAdapter {
 
 
     /**
-     * Function to persist and index modifications to an existing resource
-     * @param app The updated resource which was announced to the broker
-     * @param connectorUri The connector which is offering the resource
+     * Function to persist and index modifications to an existing App
+     * @param app The updated App which was announced to the broker
+     * @param connectorUri The connector which is offering the App
      * @throws IOException thrown, if the connection to the repository could not be established
      * @throws RejectMessageException thrown, if the update is not permitted, e.g. because the resource of an inactive connector is modified, or if an internal error occurs
      */
     @Override
     public URI updated(AppResource app, URI connectorUri) throws IOException, RejectMessageException {
         URI catalogUri;
+        logger.info("Update request received. Connector URI: " + connectorUri + " with resource "
+                + app.getId());
         try {
             //Check if the connectorURI is rewritten already. If not, rewrite now
-            if(!connectorUri.toString().startsWith(componentCatalogUri.toString()))
+            if(!connectorUri.toString().startsWith(componentCatalogUri.toString())) {
                 connectorUri = AppDescriptionPersistence.rewriteConnectorUri(connectorUri);
+
+                logger.info("Rewrote connectorUri to " + connectorUri);
+                logger.info("Connector URI did not start with our component catalog URI: " + componentCatalogUri);
+            }
+            logger.info("Fetching catalog of connector");
             catalogUri = getConnectorCatalog(connectorUri);
+            logger.info("Catalog found. URI: " + catalogUri);
+
+
 
 
             //Rewrite resource
@@ -200,7 +218,8 @@ public class AppPersistence extends AppPersistenceAdapter {
     static URI tryGetRewrittenResourceUri(URI connectorUri, URI resourceUri) throws RejectMessageException {
         //Cannot do this as parameterised SPARQL query, as the connector URI is not bound to a variable, but to the FROM clause instead
         ParameterizedSparqlString pss = new ParameterizedSparqlString();
-        String queryString = "PREFIX ids: <https://w3id.org/idsa/core/> SELECT ?uri FROM NAMED <" + connectorUri.toString() + "> WHERE { GRAPH ?g { ?uri a ids:Resource . FILTER regex( str(?uri), \"" + resourceUri.hashCode() + "\" ) } } ";
+        String queryString = "PREFIX ids: <https://w3id.org/idsa/core/> SELECT ?uri FROM NAMED <" + connectorUri.toString()
+                + "> WHERE { GRAPH ?g { ?uri a ids:AppResource . FILTER regex( str(?uri), \"" + resourceUri.hashCode() + "\" ) } } ";
         ArrayList<QuerySolution> solution = repositoryFacade.selectQuery(queryString);
         if(solution != null && !solution.isEmpty())
         {
@@ -212,7 +231,7 @@ public class AppPersistence extends AppPersistenceAdapter {
 
 
     /**
-     * Function to remove a given Resource from the indexing and the triple store
+     * Function to remove a given App from the indexing and the triple store
      * @param resourceUri A URI reference to the resource which is now unavailable
      * @param connectorUri The connector which used to offer the resource
      * @throws IOException if the connection to the triple store could not be established
@@ -230,10 +249,11 @@ public class AppPersistence extends AppPersistenceAdapter {
             throw new RejectMessageException(RejectionReason.NOT_FOUND, new NullPointerException("The connector from which you are trying to sign off a App was not found or is not active."));
         }
         if(!resourceExists(resourceUri)) {
-            //resourceUri = tryGetRewrittenResourceUri(connectorUri, resourceUri);
+            resourceUri = tryGetRewrittenResourceUri(connectorUri, resourceUri);
         }
         removeFromTriplestore(resourceUri, connectorUri);
         indexing.update(repositoryFacade.getConnectorFromTripleStore(connectorUri));
+        indexing.delete(resourceUri);
     }
 
     /**
@@ -282,7 +302,7 @@ public class AppPersistence extends AppPersistenceAdapter {
                 throw new RejectMessageException(RejectionReason.NOT_FOUND, new Exception("The resource you are trying to delete was not found, or the graph owning the resource is not active (i.e. unavailable)."));
             }
             //At this stage, we need to rewrite the URI of the resource to our REST-like scheme
-            //resourceUri = tryGetRewrittenResourceUri(connectorUri, resourceUri);
+            resourceUri = tryGetRewrittenResourceUri(connectorUri, resourceUri);
         }
         //Grab "all" information about a Resource. This includes everything pointing at a resource as well as all child objects of a resource, up to a (rather arbitrary) depth of 7
         ParameterizedSparqlString queryString = new ParameterizedSparqlString("CONSTRUCT { ?res ?p ?o . ?o ?p2 ?o2 . ?o2 ?p3 ?o3 . ?o3 ?p4 ?o4 . ?o4 ?p5 ?o5 . ?o5 ?p6 ?o6 . ?o6 ?p7 ?o7 . ?s ?p ?res . } " +
@@ -290,10 +310,44 @@ public class AppPersistence extends AppPersistenceAdapter {
                 //We already ensured that this graph is active
                 //"BIND(<" + connectorUri.toString() + "> AS ?g) . " +
                 //"BIND(<" + resourceUri.toString() + "> AS ?res) . " +
-                "GRAPH ?g { { ?res ?p ?o . OPTIONAL { ?o ?p2 ?o2 . OPTIONAL { ?o2 ?p3 ?o3 . OPTIONAL { ?o3 ?p4 ?o4 . OPTIONAL { ?o4 ?p5 ?o5 . OPTIONAL { ?o5 ?p6 ?o6 . OPTIONAL { ?o6 ?p7 ?o7 . } } } } } } } " +
+                "GRAPH ?g " +
+                "{ { ?res ?p ?o . OPTIONAL { ?o ?p2 ?o2 . OPTIONAL { ?o2 ?p3 ?o3 . OPTIONAL { ?o3 ?p4 ?o4 . OPTIONAL { ?o4 ?p5 ?o5 . OPTIONAL { ?o5 ?p6 ?o6 . OPTIONAL { ?o6 ?p7 ?o7 . } } } } } } } " +
                 "UNION " +
                 "{ ?s ?p ?res . }" +
                 "} }");
+//                "{ ?res ?p ?o . " +
+//                "OPTIONAL { ?o ?p2 ?o2 . " +
+//                "FILTER(?count = 1) "+ // more incoming triples means the respective entity ?o is used by other parts --> do not delete it as the other entity needs it.
+//                "{SELECT (COUNT(DISTINCT ?a) AS ?count) ?o WHERE {" +
+//                "?a ?p_other ?o ."+
+//                "} GROUP BY ?o"+
+//                "}"+
+//                "OPTIONAL { ?o2 ?p3 ?o3 ."+
+//                "FILTER(?count2 = 1)"+
+//                "{SELECT (COUNT(DISTINCT ?b) AS ?count2) ?o2 WHERE {"+
+//                "?b ?p2_other ?o2 ."+
+//                "} GROUP BY ?o2"+
+//                "}"+
+//                "OPTIONAL { ?o3 ?p4 ?o4 ."+
+//                "FILTER(?count3 = 1)"+
+//                "{SELECT (COUNT(DISTINCT ?c) AS ?count3) ?o3 WHERE {"+
+//                "?c ?p3_other ?o3 ."+
+//                "} GROUP BY ?o3"+
+//                "}"+
+//                "OPTIONAL { ?o4 ?p5 ?o5 ."+
+//                "FILTER(?count4 = 1)"+
+//                "{SELECT (COUNT(DISTINCT ?d) AS ?count4) ?o4 WHERE {"+
+//                "?d ?p4_other ?o4 ."+
+//                "} GROUP BY ?o4"+
+//                "}"+
+//                "}"+
+//                "}"+
+//                "}"+
+//                "}"+
+//                "}"+
+//                "UNION { ?s ?p ?res . }" +
+//                "}"+
+//                "}");
         queryString.setIri("g", connectorUri.toString());
         queryString.setIri("res", resourceUri.toString());
         try {

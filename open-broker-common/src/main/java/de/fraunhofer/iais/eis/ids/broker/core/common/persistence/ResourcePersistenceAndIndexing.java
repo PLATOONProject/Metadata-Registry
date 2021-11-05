@@ -34,7 +34,12 @@ public class ResourcePersistenceAndIndexing extends ResourcePersistenceAdapter {
     private final ResourceModelCreator resourceModelCreator = new ResourceModelCreator();
 
     private static RepositoryFacade repositoryFacade;
-    //private Indexing indexing = new NullIndexing();
+
+    //Note that adding a resource is done as follows:
+    //1) Find the connector containing the resource
+    //2) Add the resource to the catalog of this connector
+    //3) Re-index the connector. While doing so, also update resource index
+    //For this reason, this indexing is not of type Resource, but InfrastructureComponent (i.e. Connector + X)
     private Indexing<InfrastructureComponent> indexing = new NullIndexing<>();
 
     private final URI componentCatalogUri;
@@ -56,7 +61,7 @@ public class ResourcePersistenceAndIndexing extends ResourcePersistenceAdapter {
      * Setter for the indexing method
      * @param indexing indexing to be used
      */
-    public void setIndexing(Indexing indexing) {
+    public void setIndexing(Indexing<InfrastructureComponent> indexing) {
         this.indexing = indexing;
     }
 
@@ -91,7 +96,7 @@ public class ResourcePersistenceAndIndexing extends ResourcePersistenceAdapter {
         //Are the results equal to the binding name "?catalog" ? If so, no such catalog was found
         if(catalogString.equals("?catalog\n"))
         {
-            throw new RejectMessageException(RejectionReason.NOT_FOUND, new NullPointerException("Catalog of connector " + connectorUri + " not found. Did you send a ConnectorAvailableMessage yet?"));
+            throw new RejectMessageException(RejectionReason.NOT_FOUND, new NullPointerException("Catalog of connector " + connectorUri + " not found. Did you send a ConnectorUpdateMessage yet?"));
         }
         //TODO: What about multiple catalogs?
         return new URI(catalogString.substring(catalogString.indexOf("<") + 1, catalogString.indexOf(">")));
@@ -117,7 +122,16 @@ public class ResourcePersistenceAndIndexing extends ResourcePersistenceAdapter {
             queryString.append("WHERE { GRAPH ?g { ")
                     //Instead of binding the value here, use the more secure parameter binding of parameterized sparql strings
                     //.append("BIND(<").append(resourceUri.toString()).append("> AS ?res) . ")
-                    .append("?res a ids:Resource ; ").append("?p ?o . } }");
+                    .append("{ ?res a ids:AppResource . }"
+                            + " UNION { ?res a ids:TextResource . }"
+                            + " UNION { ?res a ids:Resource . }"
+                            + " UNION { ?res a ids:DataResource . } \n"
+                            + "  UNION { ?res a ids:AudioResource . } \n"
+                            + "  UNION { ?res a ids:ImageResource . } \n"
+                            + "  UNION { ?res a ids:VideoResource . } \n"
+                            + "  UNION { ?res a ids:SoftwareResource . }").append("?res ?p ?o . } }");
+
+
             ParameterizedSparqlString parameterizedSparqlString = new ParameterizedSparqlString(queryString.toString());
             //Replace variable securely
             parameterizedSparqlString.setIri("res", resourceUri.toString());
@@ -149,11 +163,17 @@ public class ResourcePersistenceAndIndexing extends ResourcePersistenceAdapter {
     @Override
     public URI updated(Resource resource, URI connectorUri) throws IOException, RejectMessageException {
         URI catalogUri;
+        logger.info("Update request received. Connector URI: " + connectorUri + " with resource " + resource.getId());
         try {
             //Check if the connectorURI is rewritten already. If not, rewrite now
-            if(!connectorUri.toString().startsWith(componentCatalogUri.toString()))
+            if(!connectorUri.toString().startsWith(componentCatalogUri.toString())) {
                 connectorUri = SelfDescriptionPersistenceAndIndexing.rewriteConnectorUri(connectorUri);
+                logger.info("Rewrote connectorUri to " + connectorUri);
+                logger.info("Connector URI did not start with our component catalog URI: " + componentCatalogUri);
+            }
+            logger.info("Fetching catalog of connector");
             catalogUri = getConnectorCatalog(connectorUri);
+            logger.info("Catalog found. URI: " + catalogUri);
 
             //Rewrite resource
             SelfDescriptionPersistenceAndIndexing.replacedIds = new HashMap<>(); //Clear the map tracking all URIs that were replaced
@@ -164,9 +184,12 @@ public class ResourcePersistenceAndIndexing extends ResourcePersistenceAdapter {
         } catch (URISyntaxException e) {
             throw new RejectMessageException(RejectionReason.INTERNAL_RECIPIENT_ERROR, e);
         }
+
+        logger.info("Checking if connector is active in triple store. ID: " + connectorUri);
         if (!repositoryFacade.graphIsActive(connectorUri.toString())) {
             connectorUri = URI.create(componentCatalogUri.toString() + connectorUri.hashCode());
             if (!repositoryFacade.graphIsActive(connectorUri.toString())) {
+                logger.info("Found that connector is not active. Must be registered first");
                 throw new RejectMessageException(RejectionReason.NOT_FOUND, new NullPointerException("The connector with URI " + connectorUri + " is not actively registered at this broker. Cannot update resource for this connector."));
             }
         }
@@ -225,6 +248,7 @@ public class ResourcePersistenceAndIndexing extends ResourcePersistenceAdapter {
         }
         removeFromTriplestore(resourceUri, connectorUri);
         indexing.update(repositoryFacade.getConnectorFromTripleStore(connectorUri));
+        indexing.delete(resourceUri);
     }
 
     /**
@@ -277,14 +301,63 @@ public class ResourcePersistenceAndIndexing extends ResourcePersistenceAdapter {
         }
         //Grab "all" information about a Resource. This includes everything pointing at a resource as well as all child objects of a resource, up to a (rather arbitrary) depth of 7
         ParameterizedSparqlString queryString = new ParameterizedSparqlString("CONSTRUCT { ?res ?p ?o . ?o ?p2 ?o2 . ?o2 ?p3 ?o3 . ?o3 ?p4 ?o4 . ?o4 ?p5 ?o5 . ?o5 ?p6 ?o6 . ?o6 ?p7 ?o7 . ?s ?p ?res . } " +
-                        "WHERE { " +
-                        //We already ensured that this graph is active
-                        //"BIND(<" + connectorUri.toString() + "> AS ?g) . " +
-                        //"BIND(<" + resourceUri.toString() + "> AS ?res) . " +
-                        "GRAPH ?g { { ?res ?p ?o . OPTIONAL { ?o ?p2 ?o2 . OPTIONAL { ?o2 ?p3 ?o3 . OPTIONAL { ?o3 ?p4 ?o4 . OPTIONAL { ?o4 ?p5 ?o5 . OPTIONAL { ?o5 ?p6 ?o6 . OPTIONAL { ?o6 ?p7 ?o7 . } } } } } } } " +
-                        "UNION " +
-                        "{ ?s ?p ?res . }" +
-                        "} }");
+                "WHERE { " +
+                //We already ensured that this graph is active
+                //"BIND(<" + connectorUri.toString() + "> AS ?g) . " +
+                //"BIND(<" + resourceUri.toString() + "> AS ?res) . " +
+                "GRAPH ?g { " +
+//                        "{ ?res ?p ?o . " +
+//                            "OPTIONAL { ?o ?p2 ?o2 . " +
+//                                "" +
+//                                "OPTIONAL { ?o2 ?p3 ?o3 . " +
+//                                    "OPTIONAL { ?o3 ?p4 ?o4 . " +
+//                                        "OPTIONAL { ?o4 ?p5 ?o5 . " +
+//                                            "OPTIONAL { ?o5 ?p6 ?o6 . " +
+//                                                "OPTIONAL { ?o6 ?p7 ?o7 . " +
+//                                                "} " +
+//                                            "} " +
+//                                        "} " +
+//                                    "} " +
+//                                "} " +
+//                            "} " +
+//                        "} " +
+//                        "UNION " +
+//                        "{ ?s ?p ?res . }" +
+
+
+                "{ ?res ?p ?o . " +
+                "OPTIONAL { ?o ?p2 ?o2 . " +
+                "FILTER(?count = 1) "+ // more incoming triples means the respective entity ?o is used by other parts --> do not delete it as the other entity needs it.
+                "{SELECT (COUNT(DISTINCT ?a) AS ?count) ?o WHERE {" +
+                "?a ?p_other ?o ."+
+                "} GROUP BY ?o"+
+                "}"+
+                "OPTIONAL { ?o2 ?p3 ?o3 ."+
+                "FILTER(?count2 = 1)"+
+                "{SELECT (COUNT(DISTINCT ?b) AS ?count2) ?o2 WHERE {"+
+                "?b ?p2_other ?o2 ."+
+                "} GROUP BY ?o2"+
+                "}"+
+                "OPTIONAL { ?o3 ?p4 ?o4 ."+
+                "FILTER(?count3 = 1)"+
+                "{SELECT (COUNT(DISTINCT ?c) AS ?count3) ?o3 WHERE {"+
+                "?c ?p3_other ?o3 ."+
+                "} GROUP BY ?o3"+
+                "}"+
+                "OPTIONAL { ?o4 ?p5 ?o5 ."+
+                "FILTER(?count4 = 1)"+
+                "{SELECT (COUNT(DISTINCT ?d) AS ?count4) ?o4 WHERE {"+
+                "?d ?p4_other ?o4 ."+
+                "} GROUP BY ?o4"+
+                "}"+
+                "}"+
+                "}"+
+                "}"+
+                "}"+
+                "}"+
+                "UNION { ?s ?p ?res . }" +
+                "}"+
+                "}");
         queryString.setIri("g", connectorUri.toString());
         queryString.setIri("res", resourceUri.toString());
         try {

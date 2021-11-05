@@ -31,7 +31,6 @@ public class SelfDescriptionPersistenceAndIndexing extends SelfDescriptionPersis
     private final ConnectorModelCreator connectorModelCreator = new ConnectorModelCreator();
 
     private final RepositoryFacade repositoryFacade;
-    //private Indexing indexing = new NullIndexing();
     private Indexing<InfrastructureComponent> indexing;
 
     private static URI componentCatalogUri;
@@ -43,8 +42,9 @@ public class SelfDescriptionPersistenceAndIndexing extends SelfDescriptionPersis
      *
      * @param repositoryFacade repository (triple store) to which the modifications should be stored
      */
-    public SelfDescriptionPersistenceAndIndexing(RepositoryFacade repositoryFacade, URI componentCatalogUri) {
+    public SelfDescriptionPersistenceAndIndexing(RepositoryFacade repositoryFacade, URI componentCatalogUri, Indexing<InfrastructureComponent> indexing) {
         this.repositoryFacade = repositoryFacade;
+        this.indexing = indexing;
         SelfDescriptionPersistenceAndIndexing.componentCatalogUri = componentCatalogUri;
         Date date = new Date();
         Timer timer = new Timer();
@@ -60,14 +60,11 @@ public class SelfDescriptionPersistenceAndIndexing extends SelfDescriptionPersis
         Serializer.addKnownNamespace("owl", "http://www.w3.org/2002/07/owl#");
     }
 
-    /**
-     * Setter for the indexing method
-     *
-     * @param indexing indexing to be used
-     */
-    public void setIndexing(Indexing indexing) {
+    public void setIndexing(Indexing<InfrastructureComponent> indexing)
+    {
         this.indexing = indexing;
     }
+
 
     /**
      * Setter for the context document URL. Typically extracted from the application.properties
@@ -85,8 +82,14 @@ public class SelfDescriptionPersistenceAndIndexing extends SelfDescriptionPersis
     public void refreshIndex() {
         //Recreate the index to delete everything
         try {
-            logger.info("Refreshing index.");
+            logger.info("Refreshing indices.");
             indexing.recreateIndex("registrations");
+
+            //If exists, recreate the separate resources index, too
+            try {
+                indexing.recreateIndex("resources");
+            }
+            catch (Exception ignored) {}
 
             List<String> activeGraphs = repositoryFacade.getActiveGraphs();
             if(activeGraphs.isEmpty()) //Nothing to index. Return here to make sure that in case no active graphs exist, inactive ones are also ignored
@@ -96,14 +99,19 @@ public class SelfDescriptionPersistenceAndIndexing extends SelfDescriptionPersis
 
             //Iterate over all active graphs, i.e. non-passivated and non-deleted graphs
             for (String graph : activeGraphs) {
-                //Add each connector to the index
-                logger.info("Adding connector " + graph + " to index.");
-                indexing.add(repositoryFacade.getConnectorFromTripleStore(new URI(graph)));
+                try { //Do a try-catch here, so that one problematic connector does not destroy the entire reindexing process
+                    //Add each connector to the index
+                    logger.info("Adding connector " + graph + " to index.");
+                    indexing.add(repositoryFacade.getConnectorFromTripleStore(new URI(graph)));
+                }
+                catch (IOException | URISyntaxException | RejectMessageException e) {
+                    logger.error("Failed to re-index connector " + graph, e);
+                }
             }
         } catch (ConnectException ignored) {
             logger.warn("Could not connect to indexing. Ignoring recreation of index.");
         } //Prevent startup error in case no indexing was started
-        catch (IOException | URISyntaxException | RejectMessageException e) {
+        catch (IOException e) {
             logger.error("Failed to refresh index: ", e);
         }
     }

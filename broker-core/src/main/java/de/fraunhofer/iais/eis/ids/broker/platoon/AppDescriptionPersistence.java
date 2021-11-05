@@ -44,8 +44,9 @@ public class AppDescriptionPersistence extends SelfDescriptionPersistenceAdapter
      *
      * @param repositoryFacade repository (triple store) to which the modifications should be stored
      */
-    public AppDescriptionPersistence(RepositoryFacade repositoryFacade, URI componentCatalogUri) {
+    public AppDescriptionPersistence(RepositoryFacade repositoryFacade, URI componentCatalogUri,  Indexing<InfrastructureComponent> indexing) {
         this.repositoryFacade = repositoryFacade;
+        this.indexing = indexing;
         AppDescriptionPersistence.componentCatalogUri = componentCatalogUri;
         Date date = new Date();
         Timer timer = new Timer();
@@ -66,7 +67,8 @@ public class AppDescriptionPersistence extends SelfDescriptionPersistenceAdapter
      *
      * @param indexing indexing to be used
      */
-    public void setIndexing(Indexing indexing) {
+    public void setIndexing(Indexing<InfrastructureComponent> indexing)
+    {
         this.indexing = indexing;
     }
 
@@ -89,6 +91,12 @@ public class AppDescriptionPersistence extends SelfDescriptionPersistenceAdapter
             logger.info("Refreshing index.");
             indexing.recreateIndex("registrations");
 
+            //If exists, recreate the separate resources index, too
+            try {
+                indexing.recreateIndex("AppResources");
+            }
+            catch (Exception ignored) {}
+
             List<String> activeGraphs = repositoryFacade.getActiveGraphs();
             if(activeGraphs.isEmpty()) //Nothing to index. Return here to make sure that in case no active graphs exist, inactive ones are also ignored
             {
@@ -97,17 +105,23 @@ public class AppDescriptionPersistence extends SelfDescriptionPersistenceAdapter
 
             //Iterate over all active graphs, i.e. non-passivated and non-deleted graphs
             for (String graph : activeGraphs) {
-                //Add each connector to the index
-                logger.info("Adding connector " + graph + " to index.");
-                indexing.add(repositoryFacade.getConnectorFromTripleStore(new URI(graph)));
+                try {
+                    //Add each connector to the index
+                    logger.info("Adding connector " + graph + " to index.");
+                    indexing.add(repositoryFacade.getConnectorFromTripleStore(new URI(graph)));
+                }
+                catch (IOException | URISyntaxException | RejectMessageException e) {
+                    logger.error("Failed to re-index connector " + graph, e);
+                }
             }
         } catch (ConnectException ignored) {
             logger.warn("Could not connect to indexing. Ignoring recreation of index.");
         } //Prevent startup error in case no indexing was started
-        catch (IOException | URISyntaxException | RejectMessageException e) {
+        catch (IOException e) {
             logger.error("Failed to refresh index: ", e);
         }
     }
+
 
     /**
      * Small utility function to replace URIs in a string

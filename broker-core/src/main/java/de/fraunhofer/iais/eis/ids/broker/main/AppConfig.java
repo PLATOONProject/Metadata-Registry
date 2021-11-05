@@ -71,7 +71,7 @@ public class AppConfig extends AppConfigTemplate {
 
         //added by me
         AppDescriptionPersistence appDescriptionPersistence = new AppDescriptionPersistence
-                (repositoryFacade, catalogUri);
+                (repositoryFacade, catalogUri, indexing);
         appDescriptionPersistence.setIndexing(indexing);
 
         //Object taking care of modifications to resources, such as connectors registering new resources
