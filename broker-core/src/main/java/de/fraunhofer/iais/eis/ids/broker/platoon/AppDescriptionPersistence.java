@@ -5,6 +5,7 @@ import de.fraunhofer.iais.eis.ids.broker.core.common.impl.SelfDescriptionPersist
 import de.fraunhofer.iais.eis.ids.broker.core.common.persistence.ConnectorModelCreator;
 import de.fraunhofer.iais.eis.ids.component.core.RejectMessageException;
 import de.fraunhofer.iais.eis.ids.index.common.persistence.*;
+import de.fraunhofer.iais.eis.ids.index.common.persistence.spi.Indexing;
 import de.fraunhofer.iais.eis.ids.jsonld.Serializer;
 import org.apache.jena.rdf.model.Model;
 import org.apache.jena.rdf.model.ModelFactory;
@@ -31,7 +32,8 @@ public class AppDescriptionPersistence extends SelfDescriptionPersistenceAdapter
     private final ConnectorModelCreator connectorModelCreator = new ConnectorModelCreator();
 
     private final RepositoryFacade repositoryFacade;
-    private Indexing indexing = new NullIndexing();
+    //private Indexing indexing = new NullIndexing();
+    private Indexing<InfrastructureComponent> indexing = new NullIndexing<>();
 
     private static URI componentCatalogUri;
 

@@ -65,7 +65,7 @@ public class AppConfig extends AppConfigTemplate {
 
         //Object taking care of storing connectors and their resources in a triple store with optional indexing
         SelfDescriptionPersistenceAndIndexing selfDescriptionPersistence = new SelfDescriptionPersistenceAndIndexing(
-                repositoryFacade, catalogUri);
+                repositoryFacade, catalogUri, indexing);
         //Set indexing to what has been configured (e.g. no indexing or ElasticSearch Indexing, if implemented)
         selfDescriptionPersistence.setIndexing(indexing);
 
