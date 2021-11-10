@@ -3,13 +3,14 @@ package de.fraunhofer.iais.eis.ids.index.common.main;
 import de.fraunhofer.iais.eis.ids.component.core.SecurityTokenProvider;
 import de.fraunhofer.iais.eis.ids.component.core.SelfDescriptionProvider;
 import de.fraunhofer.iais.eis.ids.component.interaction.multipart.MultipartComponentInteractor;
-import de.fraunhofer.iais.eis.ids.index.common.persistence.Indexing;
+import de.fraunhofer.iais.eis.ids.index.common.persistence.spi.Indexing;
 import de.fraunhofer.iais.eis.ids.index.common.persistence.NullIndexing;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.net.URI;
 import java.util.Collection;
+import java.util.ServiceLoader;
 
 /**
  * Template class for AppConfig of an index service.
@@ -23,7 +24,9 @@ public abstract class AppConfigTemplate {
     public String contextDocumentUrl;
     public URI catalogUri;
     public SelfDescriptionProvider selfDescriptionProvider;
-    public Indexing indexing = new NullIndexing();
+
+    public Indexing indexing = ServiceLoader.load(Indexing.class).findFirst().orElse(new NullIndexing<>());
+//    public Indexing indexing = new NullIndexing();
     public SecurityTokenProvider securityTokenProvider = new SecurityTokenProvider() {
         @Override
         public String getSecurityToken() {

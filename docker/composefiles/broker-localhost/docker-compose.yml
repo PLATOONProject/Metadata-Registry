@@ -10,7 +10,7 @@ services:
     - "80:80"
 
   broker-core:
-    image: registry.gitlab.cc-asp.fraunhofer.de/tmorbagalh/apphandler/broker-open/core:v1
+    image: registry.gitlab.cc-asp.fraunhofer.de/tmorbagalh/apphandler/broker-open/core:v3
     volumes:
 #     - /etc/idscert/localhost:/etc/cert/
        - c:/etc/idscert/localhost:/etc/cert/
