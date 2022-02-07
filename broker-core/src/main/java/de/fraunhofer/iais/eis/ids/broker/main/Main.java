@@ -45,7 +45,8 @@ import java.util.Objects;
  */
 @Configuration
 @EnableAutoConfiguration(exclude = SolrAutoConfiguration.class)
-@ComponentScan(basePackages = { "de.fraunhofer.iais.eis.ids.component.protocol.http.server"} )
+@ComponentScan(basePackages = { "de.fraunhofer.iais.eis.ids.component.protocol.http.server", "de.fraunhofer.iais.eis.ids.index.common"} )
+//@ComponentScan(basePackages = { "de.fraunhofer.iais.eis.ids.component.protocol.http.server"} )
 public class Main extends MainTemplate implements ComponentInteractorProvider {
 
     Logger logger = LoggerFactory.getLogger(Main.class);
