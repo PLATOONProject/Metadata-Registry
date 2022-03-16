@@ -26,7 +26,7 @@ services:
     - "8080"
 
   broker-fuseki:
-    image: registry.gitlab.cc-asp.fraunhofer.de/tmorbagalh/apphandler/broker-open/fuseki:4.1.4
+    image: registry.gitlab.cc-asp.fraunhofer.de/eis-ids/broker/fuseki:5.0.0-SNAPSHOT
     volumes:
       - broker-fuseki:/fuseki
     expose:
