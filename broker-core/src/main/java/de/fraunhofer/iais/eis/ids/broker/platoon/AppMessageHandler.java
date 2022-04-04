@@ -87,14 +87,14 @@ public class AppMessageHandler extends ValidatingMessageHandler<AppMAP, DefaultS
                     rewrittenUri = appStatusHandler.updated(messageAndPayload.getPayload().get(), msg.getIssuerConnector());
                 } else {
                     //If no payload present, Resource cannot be updated
-                    throw new RejectMessageException(RejectionReason.BAD_PARAMETERS, new NullPointerException("Affected Resource is null or payload is missing"));
+                    throw new RejectMessageException(RejectionReason.BAD_PARAMETERS, new NullPointerException("Affected AppResource is null or payload is missing"));
                 }
             } else if (msg instanceof AppUnavailableMessage) {
                 //ResourceUnavailableMessages only contain a reference to the Resource which is now unavailable. Payload should be null
                 if (msg.getAffectedResource() != null) {
                     appStatusHandler.unavailable(msg.getAffectedResource(), msg.getIssuerConnector());
                 } else {
-                    throw new RejectMessageException(RejectionReason.BAD_PARAMETERS, new NullPointerException("Affected Resource is null"));
+                    throw new RejectMessageException(RejectionReason.BAD_PARAMETERS, new NullPointerException("Affected AppResource is null"));
                 }
             }
 

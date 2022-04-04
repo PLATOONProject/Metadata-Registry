@@ -3,8 +3,8 @@ package de.fraunhofer.iais.eis.ids.index.common.main;
 import de.fraunhofer.iais.eis.ids.component.core.SecurityTokenProvider;
 import de.fraunhofer.iais.eis.ids.component.core.SelfDescriptionProvider;
 import de.fraunhofer.iais.eis.ids.component.interaction.multipart.MultipartComponentInteractor;
-import de.fraunhofer.iais.eis.ids.index.common.persistence.spi.Indexing;
 import de.fraunhofer.iais.eis.ids.index.common.persistence.NullIndexing;
+import de.fraunhofer.iais.eis.ids.index.common.persistence.spi.Indexing;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -25,14 +25,37 @@ public abstract class AppConfigTemplate {
     public URI catalogUri;
     public SelfDescriptionProvider selfDescriptionProvider;
 
+    //Try to find some indexing on classpath. If not present, use Null Indexing
     public Indexing indexing = ServiceLoader.load(Indexing.class).findFirst().orElse(new NullIndexing<>());
-//    public Indexing indexing = new NullIndexing();
+    public int maxNumberOfIndexedConnectorResources = 100; // only the default value
+    public boolean refreshAtBeginning;
+    public int refreshHours;
     public SecurityTokenProvider securityTokenProvider = new SecurityTokenProvider() {
         @Override
         public String getSecurityToken() {
             return "";
         }
     };
+
+    /**
+     * This function can be used to overwrite the default behaviour of trying to find any indexing in the classpath
+     * @param indexing Desired indexing implementation to be used
+     * @param maxNumberOfIndexedConnectorResources The Connector index is limited to a certain number of contained
+     *                                             resources to ensure acceptable read/write times. This parameter gives
+     *                                             the upper limit. Default is 100
+     * @return AppConfigTemplate with new value set for indexing
+     */
+    public AppConfigTemplate setIndexing(Indexing indexing, int maxNumberOfIndexedConnectorResources,
+                                         boolean refreshAtBeginning, int refreshHours)
+    {
+        logger.info("Setting indexing to " + indexing.getClass().getSimpleName());
+        this.indexing = indexing;
+        this.maxNumberOfIndexedConnectorResources = maxNumberOfIndexedConnectorResources;
+        this.refreshHours = refreshHours;
+        this.refreshAtBeginning = refreshAtBeginning;
+        return this;
+    }
+
     public Collection<String> trustedJwksHosts;
     public boolean dapsValidateIncoming;
     public URI responseSenderAgent;
@@ -133,6 +156,7 @@ public abstract class AppConfigTemplate {
         logger.info("Incoming messages DAPS token verification enabled: " +dapsValidateIncoming);
         return this;
     }
+
 
     /**
      * Build function, turning Builder Object into an actual MultipartComponentInteractor

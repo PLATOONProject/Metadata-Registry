@@ -21,7 +21,6 @@ public class ConnectorModelCreator extends ModelCreator {
         return statement.getPredicate().equals(RDF.type) &&
                 (statement.getObject().equals(INFOMODEL.BASE_CONNECTOR) ||
                         statement.getObject().equals(INFOMODEL.TRUSTED_CONNECTOR));
-        //statement.getObject().equals(INFOMODEL.)
     }
 
 }

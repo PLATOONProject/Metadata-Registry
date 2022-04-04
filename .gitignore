@@ -10,5 +10,15 @@
 target/
 **/*.jar
 
+# react frontend
+searchfrontend/node_modules
+searchfrontend/build
+docker/searchfrontend/build/
+searchfrontend/package-lock.json
+
 # logs
 logs/
+
+#Temporary env file
+searchfrontend/public/env-config.js
+searchfrontend/env-config.js
