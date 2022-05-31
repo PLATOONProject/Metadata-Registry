@@ -6,10 +6,8 @@ import de.fraunhofer.iais.eis.ids.component.core.SecurityTokenProvider;
 import de.fraunhofer.iais.eis.ids.component.core.TokenRetrievalException;
 import de.fraunhofer.iais.eis.ids.component.core.logging.MessageLogger;
 import de.fraunhofer.iais.eis.ids.component.core.map.DefaultSuccessMAP;
-import de.fraunhofer.iais.eis.ids.connector.commons.broker.InfrastructureComponentStatusHandler;
-import de.fraunhofer.iais.eis.ids.connector.commons.messagevalidation.ValidatingMessageHandler;
-import de.fraunhofer.iais.eis.ids.connector.commons.resource.map.ResourceMAP;
 import de.fraunhofer.iais.eis.ids.connector.commons.app.map.AppMAP;
+import de.fraunhofer.iais.eis.ids.connector.commons.messagevalidation.ValidatingMessageHandler;
 import de.fraunhofer.iais.eis.ids.index.common.persistence.RepositoryFacade;
 
 import java.net.URI;
@@ -87,14 +85,14 @@ public class AppMessageHandler extends ValidatingMessageHandler<AppMAP, DefaultS
                     rewrittenUri = appStatusHandler.updated(messageAndPayload.getPayload().get(), msg.getIssuerConnector());
                 } else {
                     //If no payload present, Resource cannot be updated
-                    throw new RejectMessageException(RejectionReason.BAD_PARAMETERS, new NullPointerException("Affected Resource is null or payload is missing"));
+                    throw new RejectMessageException(RejectionReason.BAD_PARAMETERS, new NullPointerException("Affected AppResource is null or payload is missing"));
                 }
             } else if (msg instanceof AppUnavailableMessage) {
                 //ResourceUnavailableMessages only contain a reference to the Resource which is now unavailable. Payload should be null
                 if (msg.getAffectedResource() != null) {
                     appStatusHandler.unavailable(msg.getAffectedResource(), msg.getIssuerConnector());
                 } else {
-                    throw new RejectMessageException(RejectionReason.BAD_PARAMETERS, new NullPointerException("Affected Resource is null"));
+                    throw new RejectMessageException(RejectionReason.BAD_PARAMETERS, new NullPointerException("Affected AppResource is null"));
                 }
             }
 

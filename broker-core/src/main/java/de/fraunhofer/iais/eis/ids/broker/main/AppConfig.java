@@ -9,7 +9,6 @@ import de.fraunhofer.iais.eis.ids.broker.core.common.persistence.SelfDescription
 import de.fraunhofer.iais.eis.ids.broker.platoon.AppDescriptionPersistence;
 import de.fraunhofer.iais.eis.ids.broker.platoon.AppMessageHandler;
 import de.fraunhofer.iais.eis.ids.broker.platoon.AppPersistence;
-
 import de.fraunhofer.iais.eis.ids.component.core.DefaultComponent;
 import de.fraunhofer.iais.eis.ids.component.core.RequestType;
 import de.fraunhofer.iais.eis.ids.component.core.SelfDescriptionProvider;
@@ -18,7 +17,6 @@ import de.fraunhofer.iais.eis.ids.component.ecosystemintegration.daps.JWKSFromIs
 import de.fraunhofer.iais.eis.ids.component.interaction.multipart.MultipartComponentInteractor;
 import de.fraunhofer.iais.eis.ids.component.interaction.validation.ShaclValidator;
 import de.fraunhofer.iais.eis.ids.connector.commons.broker.QueryHandler;
-import de.fraunhofer.iais.eis.ids.index.common.endpoint.FrontendEndpoints;
 import de.fraunhofer.iais.eis.ids.index.common.main.AppConfigTemplate;
 import de.fraunhofer.iais.eis.ids.index.common.persistence.ConstructQueryResultHandler;
 import de.fraunhofer.iais.eis.ids.index.common.persistence.DescriptionProvider;
@@ -35,7 +33,6 @@ import java.io.IOException;
 public class AppConfig extends AppConfigTemplate {
 
     private final Logger logger = LoggerFactory.getLogger(AppConfig.class);
-
 
     /**
      * Class constructor
@@ -63,36 +60,30 @@ public class AppConfig extends AppConfigTemplate {
 
         //Repository facade is our bridge to the triple store backend
         RepositoryFacade repositoryFacade = new RepositoryFacade(sparqlEndpointUrl);
-        FrontendEndpoints.repositoryFacade = repositoryFacade;
 
         //Object taking care of storing connectors and their resources in a triple store with optional indexing
         SelfDescriptionPersistenceAndIndexing selfDescriptionPersistence = new SelfDescriptionPersistenceAndIndexing(
-                repositoryFacade, catalogUri, indexing);
-        //Set indexing to what has been configured (e.g. no indexing or ElasticSearch Indexing, if implemented)
-        selfDescriptionPersistence.setIndexing(indexing);
-
-        //added by me
-        AppDescriptionPersistence appDescriptionPersistence = new AppDescriptionPersistence
-                (repositoryFacade, catalogUri, indexing);
-        appDescriptionPersistence.setIndexing(indexing);
+                repositoryFacade, catalogUri, indexing, maxNumberOfIndexedConnectorResources);
 
         //Object taking care of modifications to resources, such as connectors registering new resources
         //In contrast to the SelfDescriptionPersistenceAndIndexing, this class takes care of persisting resources coming from ResourceUpdateMessages and ResourceUnavailableMessages
         ResourcePersistenceAndIndexing resourcePersistenceAndIndexing = new ResourcePersistenceAndIndexing(
-                repositoryFacade, catalogUri);
+                repositoryFacade, catalogUri, maxNumberOfIndexedConnectorResources);
         resourcePersistenceAndIndexing.setIndexing(indexing);
 
-        // Added by me
-        AppPersistence appPersistence = new AppPersistence(repositoryFacade, catalogUri);
+        AppDescriptionPersistence appDescriptionPersistence = new AppDescriptionPersistence
+                (repositoryFacade, catalogUri, maxNumberOfIndexedConnectorResources);
+        appDescriptionPersistence.setIndexing(indexing);
+
+        AppPersistence appPersistence = new AppPersistence(repositoryFacade, catalogUri, maxNumberOfIndexedConnectorResources);
         appPersistence.setIndexing(indexing);
+
 
         //Strategy for fetching the context for JSON-LD objects
         if (contextDocumentUrl != null && !contextDocumentUrl.isEmpty()) {
             selfDescriptionPersistence.setContextDocumentUrl(contextDocumentUrl);
-            //added by me
-            appDescriptionPersistence.setContextDocumentUrl(contextDocumentUrl);
             resourcePersistenceAndIndexing.setContextDocumentUrl(contextDocumentUrl);
-            //added by me
+            appDescriptionPersistence.setContextDocumentUrl(contextDocumentUrl);
             appPersistence.setContextDocumentUrl(contextDocumentUrl);
             ConstructQueryResultHandler.contextDocumentUrl = contextDocumentUrl;
         }
@@ -101,7 +92,6 @@ public class AppConfig extends AppConfigTemplate {
         //Message handler for ConnectorUpdateMessages and ConnectorUnavailableMessages
         RegistrationHandler registrationHandler = new RegistrationHandler(selfDescriptionPersistence, selfDescriptionProvider.getSelfDescription(), securityTokenProvider, repositoryFacade, responseSenderAgent);
         //Add some security checks, e.g. preventing signing off of other connectors
-
         registrationHandler.addMapValidationStrategy(new ConnectorUnavailableValidationStrategy(repositoryFacade));
         //Message handler for QueryMessages
         QueryHandler queryHandler = new QueryHandler(selfDescriptionProvider.getSelfDescription(), selfDescriptionPersistence, securityTokenProvider, responseSenderAgent);
@@ -115,6 +105,8 @@ public class AppConfig extends AppConfigTemplate {
 
         //Class to provide descriptions for objects persisted in our triple store, as well as providing self-descriptions
         DescriptionProvider descriptionProvider = new DescriptionProvider(selfDescriptionProvider.getSelfDescription(), repositoryFacade, catalogUri);
+
+
         //The corresponding message handler
         DescriptionRequestHandler descriptionHandler = new DescriptionRequestHandler(descriptionProvider, securityTokenProvider, responseSenderAgent);
         component.addMessageHandler(descriptionHandler, RequestType.INFRASTRUCTURE);

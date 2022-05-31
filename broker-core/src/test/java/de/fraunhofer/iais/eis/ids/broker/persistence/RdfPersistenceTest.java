@@ -28,7 +28,7 @@ public class RdfPersistenceTest {
     public void setUp() {
         repositoryFacade = new RepositoryFacade();
         try {
-            persistence = new SelfDescriptionPersistenceAndIndexing(repositoryFacade, new URI("http://localhost:8080/connectors/"), new NullIndexing<>());
+            persistence = new SelfDescriptionPersistenceAndIndexing(repositoryFacade, new URI("http://localhost:8080/connectors/"), new NullIndexing<>(), 10);
         } catch (URISyntaxException e) {
             e.printStackTrace();
         }
@@ -54,26 +54,22 @@ public class RdfPersistenceTest {
     private InfrastructureComponent createConnector() {
         URI curator = null;
         URI maintainer = null;
-        ConnectorEndpoint endpoint = null;
         try {
             curator = new URI("http://example.org/curator");
             maintainer = new URI("http://example.org/maintainer");
-            endpoint = new ConnectorEndpointBuilder()
-                    ._accessURL_(new URI("http://example.org/"))
-                    .build();
         }
         catch (URISyntaxException ignored) {
             // shouldn't happen
         }
         return new BaseConnectorBuilder()
                 ._title_(new ArrayList<>(Collections.singletonList(new TypedLiteral("DWD Open Data Connector"))))
-                ._curator_(curator)
-                ._maintainer_(maintainer)
+                ._curatorAsUri_(curator)
+                ._maintainerAsUri_(maintainer)
                 ._outboundModelVersion_("4.0.0")
                 ._inboundModelVersion_(asList("4.0.0"))
                 ._resourceCatalog_(asList(new ResourceCatalogBuilder().build()))
                 ._securityProfile_(SecurityProfile.BASE_SECURITY_PROFILE)
-                ._hasDefaultEndpoint_(endpoint)
+                ._hasDefaultEndpoint_(new ConnectorEndpointBuilder()._accessURL_(URI.create("https://example.org/endpoint")).build())
                 .build();
 
     }

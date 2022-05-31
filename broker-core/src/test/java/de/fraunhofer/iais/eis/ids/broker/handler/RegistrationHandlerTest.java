@@ -22,20 +22,16 @@ import static de.fraunhofer.iais.eis.util.Util.asList;
 
 public class RegistrationHandlerTest {
 
-
-    private final ConnectorEndpoint endpoint = new ConnectorEndpointBuilder()
-            ._accessURL_(new URI("http://example.org/"))
-            .build();
     private final URI dummyUri = new URI("https://example.org/dummy");
     private final InfrastructureComponent connector = new BaseConnectorBuilder(dummyUri)
             ._title_(new ArrayList<>(asList(new TypedLiteral("DWD Open Data Connector", "en"))))
-            ._curator_(dummyUri)
-            ._maintainer_(dummyUri)
+            ._curatorAsUri_(dummyUri)
+            ._maintainerAsUri_(dummyUri)
             ._outboundModelVersion_("3.0.0")
             ._inboundModelVersion_(asList("3.0.0"))
             ._resourceCatalog_(asList(new ResourceCatalogBuilder().build()))
             ._securityProfile_(SecurityProfile.BASE_SECURITY_PROFILE)
-            ._hasDefaultEndpoint_(endpoint)
+            ._hasDefaultEndpoint_(new ConnectorEndpointBuilder()._accessURL_(URI.create("https://example.org/endpoint")).build())
             .build();
     private final SecurityTokenProvider securityTokenProvider = new SecurityTokenProvider() {
         @Override
@@ -48,13 +44,13 @@ public class RegistrationHandlerTest {
     private final InfrastructureComponent broker = new BrokerBuilder()
             ._title_(asList(new TypedLiteral("EIS Broker", "en")))
             ._description_(asList(new TypedLiteral("A semantic impl for demonstration purposes", "en")))
-            ._maintainer_(dummyUri)
-            ._curator_(dummyUri)
+            ._maintainerAsUri_(dummyUri)
+            ._curatorAsUri_(dummyUri)
             ._inboundModelVersion_(Util.asList("3.0.0"))
             ._outboundModelVersion_("3.0.0")
             ._resourceCatalog_(asList(new ResourceCatalogBuilder().build()))
             ._securityProfile_(SecurityProfile.BASE_SECURITY_PROFILE)
-            ._hasDefaultEndpoint_(endpoint)
+            ._hasDefaultEndpoint_(new ConnectorEndpointBuilder()._accessURL_(URI.create("https://example.org/endpoint")).build())
             .build();
 
     private final Message connectorAvailable = new ConnectorUpdateMessageBuilder()

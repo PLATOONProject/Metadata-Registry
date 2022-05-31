@@ -4,12 +4,15 @@ import de.fraunhofer.iais.eis.Connector;
 import de.fraunhofer.iais.eis.Participant;
 import de.fraunhofer.iais.eis.RejectionReason;
 import de.fraunhofer.iais.eis.ids.component.core.RejectMessageException;
+import de.fraunhofer.iais.eis.ids.jsonld.Serializer;
 import org.apache.http.conn.HttpHostConnectException;
 import org.apache.jena.graph.Node;
 import org.apache.jena.query.*;
 import org.apache.jena.rdf.model.*;
 import org.apache.jena.rdfconnection.RDFConnection;
 import org.apache.jena.rdfconnection.RDFConnectionFactory;
+import org.apache.jena.riot.RDFFormat;
+import org.apache.jena.riot.RDFWriter;
 import org.apache.jena.sparql.ARQException;
 import org.apache.jena.sparql.core.Quad;
 import org.apache.jena.sparql.engine.http.QueryExceptionHTTP;
@@ -19,11 +22,13 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.ByteArrayOutputStream;
+import java.io.IOException;
 import java.io.OutputStream;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
 /**
@@ -35,6 +40,49 @@ public class RepositoryFacade {
     private final String graphIsActiveUrl = "https://w3id.org/idsa/core/graphIsActive";
     private String sparqlUrl;
     private Dataset dataset;
+
+    private static boolean writableConnectionWarningPrinted = false;
+
+    // A simple query string that is used to validate the existence of a valid connection to a fuseki server
+    private static final String TEST_CONNECTION_STRING = "ASK WHERE { GRAPH <test> {?s ?p ?o .} }";
+
+    private static final String CONNECTOR_QUERY_HATEOS_BEGINNING =
+            "PREFIX ids: <https://w3id.org/idsa/core/> \n" +
+            "PREFIX owl: <http://www.w3.org/2002/07/owl#>\n" +
+            "\n" +
+            "CONSTRUCT { \n" +
+            "  ?s0 ?p0 ?o0 . \n" +
+            "  ?o0 ?p1 ?o1 . \n" +
+            "} \n" +
+            "WHERE {  \n" +
+            "  GRAPH <%1$s> {\n" +
+            "    { <%1$s> ?p0 ?o0 . } \n" +
+            "    UNION \n" +
+            "    { ?s owl:sameAs <%1$s> ; ?p0 ?o0 . }\n" +
+            "    \n" +
+            "    BIND ( IF (BOUND(?s), ?s, <%1$s>) AS ?s0) .\n" +
+            "    OPTIONAL { \n" +
+            "      {\n" +
+            "      \t?o0 ?p1 ?o1 .\n" +
+            "        FILTER (?p1 != ids:offeredResource)\n" +
+            "      } UNION {       \n" +
+            "        BIND (ids:offeredResource AS ?p1)\n" +
+            "        ?o0 ?p1 ?o1 .\n" +
+            "    \n" +
+            "        { # ?o1 should be an ids:Resource, and only a certain amount shall be returned\n" +
+            "          SELECT (?o1 AS ?res) WHERE { GRAPH <%1$s> {\n" +
+            "              \n" +
+            "                { ?o1 a ids:Resource } UNION { ?o1 a ids:DataResource } UNION { ?o1 a ids:TextResource } UNION { ?o1 a ids:AudioResource } UNION { ?o1 a ids:ImageResource } UNION { ?o1 a ids:VideoResource } UNION { ?o1 a ids:SoftwareResource } UNION { ?o1 a ids:AppResource }\n" +
+            "              \n" +
+            "            }}";
+    private static final String CONNECTOR_QUERY_HATEOS_END =
+            "\n" +
+                    "        }\n" +
+                    "        FILTER ( ?o1 = ?res ) .\n" +
+                    "      }\n" +
+                    "    } \n" +
+                    "  } \n" +
+                    "}";
 
     /**
      * Default constructor, creating a local in-memory repository
@@ -69,6 +117,16 @@ public class RepositoryFacade {
         initAdminGraph();
     }
 
+    /**
+     * Utility function to return a list of all the Resources for a specific Connector
+     * @param connectorURI the URI of the target Connector
+     * @return list of all the Resources under connectorURI
+     */
+    public List<String> getResouces(URI connectorURI){
+        ArrayList<QuerySolution> resultSet = selectQuery("prefix ids: <https://w3id.org/idsa/core/>\n"+
+                "SELECT ?subject WHERE { graph <" + connectorURI + "> { ?subject a ids:DataResource } }");
+        return resultSet.stream().map(result -> result.get("subject").toString()).collect(Collectors.toList());
+    }
 
     /**
      * @deprecated This function returns a writable connection. Use the explicit getNewWritableConnection or getNewReadOnlyConnection instead
@@ -87,13 +145,45 @@ public class RepositoryFacade {
     public RDFConnection getNewWritableConnection()
     {
         if(sparqlUrl != null && !sparqlUrl.isEmpty()) {
-            return RDFConnectionFactory.connectFuseki(sparqlUrl);
-            //return RDFConnectionFactory.connectFuseki(sparqlUrl);
-        }
+            String url = sparqlUrl;
+            Integer counter=0;
+            Integer counterThreshold = 3;
+            logger.info("Trying to establish a connection to Fuseki server with url " + url);
+            while (counter<counterThreshold) {
+                try{
+                    RDFConnection connection = RDFConnectionFactory.connectFuseki(url);
+                    connection.queryAsk(this.TEST_CONNECTION_STRING);
+                    logger.info("Connection successfully established...");
+                    connection.close();
+                    connection.end();
+                    return RDFConnectionFactory.connectFuseki(url);
+                }
+                catch (QueryExceptionHTTP e) {
+                    logger.info("unable to establish a connection to Fuseki server with url " + url);
+
+                    if (counter < counterThreshold - 1) {
+                        try {
+                            logger.info("retry to establish connection to Fuseki server in 5 seconds");
+                            Thread.sleep(5000);
+                        } catch (InterruptedException ex) {
+                            ex.printStackTrace();
+                        }
+
+                        counter += 1;
+                    } else {
+                        logger.info("stop trying to establish connection ");
+                        throw e;
+                    }
+
+                }
+            }
+
+        } else
         if(dataset == null)
         {
             dataset = DatasetFactory.create();
         }
+
         return RDFConnectionFactory.connect(dataset);
     }
 
@@ -105,14 +195,49 @@ public class RepositoryFacade {
     public RDFConnection getNewReadOnlyConnectionToFuseki()
     {
         if(sparqlUrl != null && !sparqlUrl.isEmpty()) {
-            //read only endpoint: host:port/dataset/sparql
-            return RDFConnectionFactory.connectFuseki(sparqlUrl + (sparqlUrl.endsWith("/")? "" : "/") + "sparql");
+            String url = sparqlUrl + (sparqlUrl.endsWith("/")? "" : "/") + "sparql";
+            Integer counter=0;
+            Integer counterThreshold = 3;
+            logger.info("Trying to establish a connection to Fuseki server with url " + url);
+            while (counter<counterThreshold) {
+                try{
+                    //read only endpoint: host:port/dataset/sparql
+                    RDFConnection connection =  RDFConnectionFactory.connectFuseki(url);
+                    connection.queryAsk(this.TEST_CONNECTION_STRING);
+                    logger.info("Connection successfully established...");
+                    connection.close();
+                    connection.end();
+                    return RDFConnectionFactory.connectFuseki(url);
+                }
+                catch (QueryExceptionHTTP e) {
+                    logger.info("unable to establish a connection to Fuseki server with url " + url);
+
+                    if (counter < counterThreshold - 1) {
+                        try {
+                            logger.info("retry to establish connection to Fuseki server in 5 seconds");
+                            Thread.sleep(5000);
+                        } catch (InterruptedException ex) {
+                            ex.printStackTrace();
+                        }
+
+                        counter += 1;
+                    } else {
+                        logger.info("stop trying to establish connection and throw exception ... ");
+                        throw e;
+                    }
+                }
+            }
+
         }
         else
         {
-            logger.warn("Cannot return read-only connection to in-memory dataset. Connection will be writable!");
-            return RDFConnectionFactory.connect(dataset);
+            if(!writableConnectionWarningPrinted) {
+                logger.warn("Cannot return read-only connection to in-memory dataset. Connection will be writable!");
+                logger.warn("This warning is only printed once.");
+                writableConnectionWarningPrinted = true;
+            }
         }
+        return RDFConnectionFactory.connect(dataset);
     }
 
     /**
@@ -363,10 +488,169 @@ public class RepositoryFacade {
         {
             throw new RejectMessageException(RejectionReason.NOT_FOUND, new NullPointerException("The connector with URI " + connectorUri + " is not known to this broker or unavailable."));
         }
+        logger.info("Starting SPARQL query to fetch connector from the Fuseki server");
         //Fire the query against our repository
         ParameterizedSparqlString queryString = new ParameterizedSparqlString("CONSTRUCT { ?s ?p ?o . }" +
                 "WHERE { GRAPH ?g { ?s ?p ?o . } } ");
         queryString.setIri("g", connectorUri.toString());
+        try {
+            logger.info("Constructing the model");
+            Model result = constructQuery(queryString.toString());
+            logger.info("Model construction complete");
+            //Check if response is empty
+            if (result.isEmpty()) {
+                //Result is empty, throw exception. This will result in a RejectionMessage being sent
+                throw new RejectMessageException(RejectionReason.NOT_FOUND);
+            }
+
+
+            //Generate a connector object from the SPARQL result string (already containing the new resource!). This is a bit of a messy business
+            return ConstructQueryResultHandler.GraphQueryResultToConnector(result);
+        }
+        catch (ARQException e)
+        {
+            logger.warn("Potential SPARQL injection attack detected.", e);
+            throw new RejectMessageException(RejectionReason.MALFORMED_MESSAGE);
+        }
+    }
+
+    /**
+     * Utility function to obtain an IDS Connector object with "limit number" of Resources from a particular "offset" from the triple store
+     * @param connectorUri The URI of the connector to be obtained
+     * @param limit number of Resources to put inside the Connector object
+     * @param offset position from which "limit" number of Resources will be taken from the triple store
+     * @return an IDS connector object with specific number of Resources with the requested connectorUri, if it is known to the broker
+     * @throws RejectMessageException if the connector is not known to the broker, or if the parsing fails
+     */
+    public Connector getConnectorFromTripleStore(URI connectorUri, int limit, int offset) throws RejectMessageException {
+        if(!graphIsActive(connectorUri.toString()))
+        {
+            throw new RejectMessageException(RejectionReason.NOT_FOUND, new NullPointerException("The connector with URI " + connectorUri + " is not known to this broker or unavailable."));
+        }
+        logger.info("Starting SPARQL query to fetch connector from the Fuseki server");
+        //Fire the query against our repository
+        ParameterizedSparqlString queryString = new ParameterizedSparqlString("prefix ids: <https://w3id.org/idsa/core/>\n" +
+                "\n" +
+                "CONSTRUCT {?subject ?predicate ?object}\n" +
+                "WHERE {\n" +
+                "  graph ?g {\n" +
+                "    {\n" +
+                "      #This part is to get everything under the connector, other than any Resource\n" +
+                "      {\n" +
+                "      SELECT *\n" +
+                "      WHERE {        \n" +
+                "        ?subject ?predicate ?object.\n" +
+                "      }\n" +
+                "    }\n" +
+                "    MINUS\n" +
+                "    {\n" +
+                "      {\n" +
+                "      SELECT *\n" +
+                "      WHERE {        \n" +
+                "        ?subject ?predicate ?object.\n" +
+                "        ?x a ids:DataResource. \n" +
+                "      }\n" +
+                "      \n" +
+                "    }      \n" +
+                "    FILTER (CONTAINS (str(?subject), REPLACE(str(?x), \"\", \"\")) || CONTAINS (str(?object), REPLACE(str(?x), \"\", \"\"))) \n" +
+                "    }\n" +
+                "    }UNION{\n" +
+                "      #This part is to get number(LIMIT) of Resource(s) from the OFFSET\n" +
+                "      {\n" +
+                "        SELECT *\n" +
+                "        WHERE {       \n" +
+                "          ?subject ?predicate ?object      \n" +
+                "        }    \n" +
+                "      }   \n" +
+                "      {     \n" +
+                "        SELECT *    \n" +
+                "        WHERE{   \n" +
+                "          ?x a ids:DataResource.    \n" +
+                "        }    \n" +
+                "        LIMIT " + limit + "\n" +
+                "        OFFSET " + offset + "\n" +
+                "      }   \n" +
+                "      FILTER (CONTAINS (str(?subject), REPLACE(str(?x), \"\", \"\")) || CONTAINS (str(?object), REPLACE(str(?x), \"\", \"\")) ) \n" +
+                "    }               \n" +
+                "  } \n" +
+                "}");
+        queryString.setIri("g", connectorUri.toString());
+        logger.info("Retrieved Connector " + connectorUri.toString() + " with " + limit + " number of Resources in a batch");
+        try {
+            logger.info("Constructing the model");
+            Model result = constructQuery(queryString.toString());
+            logger.info("Model construction complete");
+            //Check if response is empty
+            if (result.isEmpty()) {
+
+                //Result is empty, throw exception. This will result in a RejectionMessage being sent
+                throw new RejectMessageException(RejectionReason.NOT_FOUND);
+            }
+
+
+            //Generate a connector object from the SPARQL result string (already containing the new resource!). This is a bit of a messy business
+            return ConstructQueryResultHandler.GraphQueryResultToConnector(result);
+        }
+        catch (ARQException e)
+        {
+            logger.warn("Potential SPARQL injection attack detected.", e);
+            throw new RejectMessageException(RejectionReason.MALFORMED_MESSAGE);
+        }
+    }
+
+
+    /**
+     * Utility function to obtain an IDS Connector object from the triple store
+     * @param connectorUri The URI of the connector to be obtained
+     * @param limit the maximum number of contained resources in the catalog, used to control the size of the indexed
+     *              connector
+     * @param offset the offset of the resources that shall be indexed, see also 'limit'
+     * @return an IDS connector object with the requested connectorUri, if it is known to the broker
+     * @throws RejectMessageException if the connector is not known to the broker, or if the parsing fails
+     */
+    public Connector getReducedConnector(URI connectorUri, int limit, int offset) throws RejectMessageException {
+        String rawQueryString = String.format(CONNECTOR_QUERY_HATEOS_BEGINNING +
+                " LIMIT " + limit + " OFFSET " + offset +
+                CONNECTOR_QUERY_HATEOS_END, connectorUri);
+        return getReducedConnector(connectorUri, rawQueryString);
+    }
+
+    /**
+     * Utility function to obtain an IDS Connector object from the triple store
+     * @param connectorUri The URI of the connector to be obtained
+     * @param limit the maximum number of contained resources in the catalog, used to control the size of the indexed
+     *              connector
+     * @return an IDS connector object with the requested connectorUri, if it is known to the broker
+     * @throws RejectMessageException if the connector is not known to the broker, or if the parsing fails
+     */
+    public Connector getReducedConnector(URI connectorUri, int limit) throws RejectMessageException {
+        String rawQueryString = String.format(CONNECTOR_QUERY_HATEOS_BEGINNING +
+                " LIMIT " + limit +
+                CONNECTOR_QUERY_HATEOS_END, connectorUri);
+        return getReducedConnector(connectorUri, rawQueryString);
+    }
+
+    /**
+     * Utility function to obtain an IDS Connector object from the triple store
+     * @param connectorUri The URI of the connector to be obtained
+     * @return an IDS connector object with the requested connectorUri, if it is known to the broker
+     * @throws RejectMessageException if the connector is not known to the broker, or if the parsing fails
+     */
+    public Connector getReducedConnector(URI connectorUri) throws RejectMessageException {
+        String rawQueryString = String.format(CONNECTOR_QUERY_HATEOS_BEGINNING +
+                CONNECTOR_QUERY_HATEOS_END, connectorUri);
+        return getReducedConnector(connectorUri, rawQueryString);
+    }
+
+    private Connector getReducedConnector(URI connectorUri, String rawQueryString) throws RejectMessageException {
+        logger.info("Getting reduced Connector" + connectorUri);
+        if(!graphIsActive(connectorUri.toString()))
+        {
+            throw new RejectMessageException(RejectionReason.NOT_FOUND, new NullPointerException("The connector with URI " + connectorUri + " is not known to this broker or unavailable."));
+        }
+
+        //Fire the query against our repository
+        ParameterizedSparqlString queryString = new ParameterizedSparqlString(rawQueryString);
         try {
             Model result = constructQuery(queryString.toString());
 
@@ -377,12 +661,23 @@ public class RepositoryFacade {
             }
 
             //Generate a connector object from the SPARQL result string (already containing the new resource!). This is a bit of a messy business
-            return ConstructQueryResultHandler.GraphQueryResultToConnector(result);
+            //return ConstructQueryResultHandler.GraphQueryResultToConnector(result);
+
+            RDFWriter writer = RDFWriter.create().format(RDFFormat.JSONLD).source(result).build();
+            ByteArrayOutputStream os = new ByteArrayOutputStream();
+            writer.output(os);
+            Serializer s = new Serializer();
+            String output = os.toString();
+            return s.deserialize(output, Connector.class);
         }
         catch (ARQException e)
         {
             logger.warn("Potential SPARQL injection attack detected.", e);
             throw new RejectMessageException(RejectionReason.MALFORMED_MESSAGE);
+        }
+        catch (IOException e) {
+            logger.warn("Problem with the containing Connector from the DB detected.", e);
+            throw new RejectMessageException(RejectionReason.INTERNAL_RECIPIENT_ERROR);
         }
     }
 
@@ -430,21 +725,8 @@ public class RepositoryFacade {
 
         logger.debug("Asking whether admin graph exists yet.");
         boolean graphExists = false;
-        try {
-            graphExists = booleanQuery("ASK WHERE { GRAPH <" + adminGraphUri.toString() + "> {?s ?p ?o .} }");
-        }
-        catch (QueryExceptionHTTP e)
-        {
-            if(e.getCause() instanceof HttpHostConnectException) //Did we get something like a connectionRefused error?
-            {
-                logger.warn("Could not establish connection to " + sparqlUrl + " - changing configuration to use local repository instead");
-                sparqlUrl = "";
-            }
-            else
-            {
-                throw e;
-            }
-        }
+
+        graphExists = booleanQuery("ASK WHERE { GRAPH <" + adminGraphUri.toString() + "> {?s ?p ?o .} }");
 
         if(!graphExists) {
             logger.info("Admin graph does not yet exist. Initializing it with one statement.");
@@ -469,7 +751,9 @@ public class RepositoryFacade {
      */
     public List<String> getActiveGraphs()
     {
+        logger.info("Running SPARQL query to the Fuseki Server to fetch active graphs");
         ArrayList<QuerySolution> resultSet = selectQuery("SELECT ?graph FROM NAMED <" + adminGraphUri + "> WHERE { GRAPH ?g { ?graph <" + graphIsActiveUrl + "> true . } } ");
+        logger.info("SPARQL query to fetch active graphs complete");
         return resultSet.stream().map(result -> result.get("graph").toString()).collect(Collectors.toList());
     }
 
