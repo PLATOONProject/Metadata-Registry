@@ -4,7 +4,9 @@ import de.fraunhofer.iais.eis.*;
 import de.fraunhofer.iais.eis.ids.broker.core.common.impl.SelfDescriptionPersistenceAdapter;
 import de.fraunhofer.iais.eis.ids.broker.core.common.persistence.ConnectorModelCreator;
 import de.fraunhofer.iais.eis.ids.component.core.RejectMessageException;
-import de.fraunhofer.iais.eis.ids.index.common.persistence.*;
+import de.fraunhofer.iais.eis.ids.index.common.persistence.GenericQueryEvaluator;
+import de.fraunhofer.iais.eis.ids.index.common.persistence.JsonLdContextFetchStrategy;
+import de.fraunhofer.iais.eis.ids.index.common.persistence.RepositoryFacade;
 import de.fraunhofer.iais.eis.ids.index.common.persistence.spi.Indexing;
 import de.fraunhofer.iais.eis.ids.jsonld.Serializer;
 import org.apache.jena.rdf.model.Model;
@@ -32,8 +34,8 @@ public class AppDescriptionPersistence extends SelfDescriptionPersistenceAdapter
     private final ConnectorModelCreator connectorModelCreator = new ConnectorModelCreator();
 
     private final RepositoryFacade repositoryFacade;
-    //private Indexing indexing = new NullIndexing();
-    private Indexing<InfrastructureComponent> indexing = new NullIndexing<>();
+//    private Indexing indexing = new NullIndexing();
+    private Indexing<InfrastructureComponent> indexing;
 
     private static URI componentCatalogUri;
 
@@ -43,10 +45,10 @@ public class AppDescriptionPersistence extends SelfDescriptionPersistenceAdapter
      * Constructor
      *
      * @param repositoryFacade repository (triple store) to which the modifications should be stored
+     * @param maxNumberOfIndexedConnectorResources
      */
-    public AppDescriptionPersistence(RepositoryFacade repositoryFacade, URI componentCatalogUri,  Indexing<InfrastructureComponent> indexing) {
+    public AppDescriptionPersistence(RepositoryFacade repositoryFacade, URI componentCatalogUri, int maxNumberOfIndexedConnectorResources) {
         this.repositoryFacade = repositoryFacade;
-        this.indexing = indexing;
         AppDescriptionPersistence.componentCatalogUri = componentCatalogUri;
         Date date = new Date();
         Timer timer = new Timer();
@@ -67,8 +69,7 @@ public class AppDescriptionPersistence extends SelfDescriptionPersistenceAdapter
      *
      * @param indexing indexing to be used
      */
-    public void setIndexing(Indexing<InfrastructureComponent> indexing)
-    {
+    public void setIndexing(Indexing indexing) {
         this.indexing = indexing;
     }
 
@@ -79,6 +80,7 @@ public class AppDescriptionPersistence extends SelfDescriptionPersistenceAdapter
      */
     public void setContextDocumentUrl(String contextDocumentUrl) {
         connectorModelCreator.setContextFetchStrategy(JsonLdContextFetchStrategy.FROM_URL, contextDocumentUrl);
+
     }
 
     /**
@@ -91,12 +93,6 @@ public class AppDescriptionPersistence extends SelfDescriptionPersistenceAdapter
             logger.info("Refreshing index.");
             indexing.recreateIndex("registrations");
 
-            //If exists, recreate the separate resources index, too
-            try {
-                indexing.recreateIndex("AppResources");
-            }
-            catch (Exception ignored) {}
-
             List<String> activeGraphs = repositoryFacade.getActiveGraphs();
             if(activeGraphs.isEmpty()) //Nothing to index. Return here to make sure that in case no active graphs exist, inactive ones are also ignored
             {
@@ -105,23 +101,17 @@ public class AppDescriptionPersistence extends SelfDescriptionPersistenceAdapter
 
             //Iterate over all active graphs, i.e. non-passivated and non-deleted graphs
             for (String graph : activeGraphs) {
-                try {
-                    //Add each connector to the index
-                    logger.info("Adding connector " + graph + " to index.");
-                    indexing.add(repositoryFacade.getConnectorFromTripleStore(new URI(graph)));
-                }
-                catch (IOException | URISyntaxException | RejectMessageException e) {
-                    logger.error("Failed to re-index connector " + graph, e);
-                }
+                //Add each connector to the index
+                logger.info("Adding connector " + graph + " to index.");
+                indexing.add(repositoryFacade.getConnectorFromTripleStore(new URI(graph)));
             }
         } catch (ConnectException ignored) {
             logger.warn("Could not connect to indexing. Ignoring recreation of index.");
         } //Prevent startup error in case no indexing was started
-        catch (IOException e) {
+        catch (IOException | URISyntaxException | RejectMessageException e) {
             logger.error("Failed to refresh index: ", e);
         }
     }
-
 
     /**
      * Small utility function to replace URIs in a string
@@ -284,12 +274,12 @@ public class AppDescriptionPersistence extends SelfDescriptionPersistenceAdapter
 
                 Set<Resource> resourcesToHandle = new HashSet<>();
                 if (resourceCatalog.getOfferedResource() != null) {
-                    resourcesToHandle.addAll(resourceCatalog.getOfferedResource());
+                    resourcesToHandle.addAll(resourceCatalog.getOfferedResourceAsObject());
                 }
                 if (resourceCatalog.getRequestedResource() != null) {
-                    resourcesToHandle.addAll(resourceCatalog.getRequestedResource());
+                    resourcesToHandle.addAll(resourceCatalog.getOfferedResourceAsObject());
                 }
-                //confirm with sebastian or matthias whether casting works in this case?
+
                 for (Resource currentResource : resourcesToHandle) {
                     currentString = rewriteResource(currentString, (AppResource) currentResource, catalogUri);
                 }
@@ -422,5 +412,6 @@ public class AppDescriptionPersistence extends SelfDescriptionPersistenceAdapter
     @Override
     public String getResults(String queryString) throws RejectMessageException {
         return new GenericQueryEvaluator(repositoryFacade).getResults(queryString);
+
     }
 }

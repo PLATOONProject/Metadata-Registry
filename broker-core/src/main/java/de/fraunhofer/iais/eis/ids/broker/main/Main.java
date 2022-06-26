@@ -1,24 +1,7 @@
-/*
- * Copyright (c) 2021 Fraunhofer IAIS.
- * All rights reserved. This program and the accompanying materials
- * are made available under the terms of the
- * Apache License Version 2.0 which accompanies
- * this distribution, and is available at
- * https://www.apache.org/licenses/LICENSE-2.0
- *
- * Contributors:
- *
- * Hantong Liu IAIS
- **Initially developed in the context of PLATOON EU H2020 project
- */
 package de.fraunhofer.iais.eis.ids.broker.main;
 
 
-import de.fraunhofer.iais.eis.*;
-import de.fraunhofer.iais.eis.ids.component.core.SecurityTokenProvider;
 import de.fraunhofer.iais.eis.ids.component.core.InfomodelFormalException;
-import de.fraunhofer.iais.eis.ids.component.core.TokenRetrievalException;
-import de.fraunhofer.iais.eis.ids.component.core.util.CalendarUtil;
 import de.fraunhofer.iais.eis.ids.component.protocol.http.server.ComponentInteractorProvider;
 import de.fraunhofer.iais.eis.ids.index.common.main.MainTemplate;
 import org.slf4j.Logger;
@@ -34,6 +17,9 @@ import org.springframework.core.env.Environment;
 
 import javax.annotation.PostConstruct;
 import javax.annotation.PreDestroy;
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.net.URI;
 import java.net.URISyntaxException;
@@ -45,8 +31,7 @@ import java.util.Objects;
  */
 @Configuration
 @EnableAutoConfiguration(exclude = SolrAutoConfiguration.class)
-@ComponentScan(basePackages = { "de.fraunhofer.iais.eis.ids.component.protocol.http.server", "de.fraunhofer.iais.eis.ids.index.common"} )
-//@ComponentScan(basePackages = { "de.fraunhofer.iais.eis.ids.component.protocol.http.server"} )
+@ComponentScan(basePackages = { "de.fraunhofer.iais.eis.ids.component.protocol.http.server"} )
 public class Main extends MainTemplate implements ComponentInteractorProvider {
 
     Logger logger = LoggerFactory.getLogger(Main.class);
@@ -70,9 +55,14 @@ public class Main extends MainTemplate implements ComponentInteractorProvider {
     @Value("${infomodel.validateWithShacl}")
     private boolean validateShacl;
 
+    @Value("${ssl.javakeystore}")
+    public String javaKeystorePath;
+
     //Environment allows us to access application.properties
     @Autowired
     private Environment env;
+
+
 
     /**
      * This function is called during startup and takes care of the initialization
@@ -88,12 +78,21 @@ public class Main extends MainTemplate implements ComponentInteractorProvider {
         sslCertificatePath = env.getProperty("ssl.certificatePath");
         elasticsearchHostname = env.getProperty("elasticsearch.hostname");
         elasticsearchPort = Integer.parseInt(Objects.requireNonNull(env.getProperty("elasticsearch.port")));
+        refreshAtBeginning = Boolean.parseBoolean(env.getProperty("index.refreshAtBeginning"));
+        refreshHours = Integer.parseInt(env.getProperty("index.refreshHours"));
         keystorePassword = env.getProperty("keystore.password");
         keystoreAlias = env.getProperty("keystore.alias");
 //        componentIdsId = env.getProperty("component.idsid");
         dapsUrl = env.getProperty("daps.url");
         trustAllCerts = Boolean.parseBoolean(env.getProperty("ssl.trustAllCerts"));
         ignoreHostName = Boolean.parseBoolean(env.getProperty("ssl.ignoreHostName"));
+
+        try {
+            javakeystore = new FileInputStream(new File(javaKeystorePath));
+            logger.info("Found KeyStore at {}.", javaKeystorePath);
+        } catch (FileNotFoundException e) {
+            logger.warn("Could not find a KeyStore at {}.", javaKeystorePath);
+        }
 
         try {
             multipartComponentInteractor = new AppConfig(createSelfDescriptionProvider())
@@ -118,23 +117,7 @@ public class Main extends MainTemplate implements ComponentInteractorProvider {
     }
 
 
-    public static void main(String[] args) throws TokenRetrievalException, URISyntaxException {
-          SpringApplication.run(Main.class, args);
-//        System.out.println(new AppResourceBuilder().build().toRdf());
-//        final URI dummyUri = new URI("https://example.org/dummy");
-//        final URI senderAgent = new URI("http://example.org/");
-//        final SecurityTokenProvider securityTokenProvider = new SecurityTokenProvider() {
-//            @Override
-//            public String getSecurityToken() {
-//                return "test1234";
-//            }
-//        };
-//        System.out.println(new AppAvailableMessageBuilder()
-//                ._issued_(CalendarUtil.now())
-//                        ._affectedResource_(dummyUri)
-//                ._modelVersion_("3.0.0")
-//                ._issuerConnector_(dummyUri)
-//                ._securityToken_(securityTokenProvider.getSecurityTokenAsDAT())
-//                ._senderAgent_(senderAgent).build().toRdf());
-   }
+    public static void main(String[] args) {
+        SpringApplication.run(Main.class, args);
+    }
 }

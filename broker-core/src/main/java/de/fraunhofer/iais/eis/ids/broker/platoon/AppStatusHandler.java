@@ -1,8 +1,6 @@
 package de.fraunhofer.iais.eis.ids.broker.platoon;
 
 import de.fraunhofer.iais.eis.AppResource;
-import de.fraunhofer.iais.eis.DataApp;
-import de.fraunhofer.iais.eis.DataResource;
 import de.fraunhofer.iais.eis.ids.component.core.RejectMessageException;
 
 import java.io.IOException;

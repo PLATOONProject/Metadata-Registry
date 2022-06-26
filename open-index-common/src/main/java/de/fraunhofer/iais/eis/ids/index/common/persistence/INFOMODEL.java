@@ -16,7 +16,4 @@ public class INFOMODEL {
     public final static Resource PARTICIPANT = ResourceFactory.createResource(NS + "Participant");
     public final static Resource RESOURCE = ResourceFactory.createResource(NS + "Resource");
 
-    public final static Resource APP = ResourceFactory.createResource(NS + "DataApp");
-    public final static Resource APPRESOURCE = ResourceFactory.createResource(NS + "AppResource");
-
 }
