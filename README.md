@@ -1,9 +1,9 @@
 
 # Metadata Registry
 
-This is an implementation of an International Data Spaces (IDS) Metadata Broker extended to handle metadata of a Data App, which is a registry for IDS Connector self-description documents and Metadata of the Data App. It is currently under development and intends to act as a central metadata registry for members of Platoon project. 
+This is an implementation of an International Data Spaces (IDS) Metadata Broker extended to handle metadata of a Data App, which is a registry for IDS Connector self-description documents and Metadata of the Data App. It is currently under development and intends to act as a central Metadata Registry for members of Platoon project. 
 
-The Open-source Data Broker has been funded by the PLATOON H2020 project funded by the EU commission..
+The Open-source Metadata Registry has been funded by the PLATOON H2020 project funded by the EU commission..
 
 ## 1. Purpose
 
@@ -22,16 +22,16 @@ Security is currently supported in terms of TLS via a reverse proxy.
 
 [open-index-common](./open-index-common): Shared functionalities not only for [open-broker-common](./open-broker-common) but also for further IDS index services (for instance ParIS).
 
-[docker](./docker): Docker ([installation guide](https://docs.docker.com/engine/install/)) and DockerCompose ([installation guide](https://docs.docker.com/compose/install/)) files to deploy the IDS Metadata Broker.
+[docker](./docker): Docker ([installation guide](https://docs.docker.com/engine/install/)) and DockerCompose ([installation guide](https://docs.docker.com/compose/install/)) files to deploy the IDS Metadata Registry.
 
 ## 3. Prerequisites
 
-In this section, we will provide some guidance as to recommendations for the number of resources that should be available to smoothly operate the IDS Metadata Broker. The actual number of resources required heavily depends on the load. In case of very little traffic, fewer resources than listed below might be required.
+In this section, we will provide some guidance as to recommendations for the number of resources that should be available to smoothly operate the IDS Metadata Registry. The actual number of resources required heavily depends on the load. In case of very little traffic, fewer resources than listed below might be required.
 
 
 ### 3.1 Hardware
 
-2GB of disk space is required for operating the IDS Metadata Broker, though we recommend providing at least 20GB of free disk storage to avoid running out of disk space with increasing number of registered items. To provide enough processing power for all Docker containers, we recommend using a 64bit quad core processor or better.
+2GB of disk space is required for operating the Metadata Registry, though we recommend providing at least 20GB of free disk storage to avoid running out of disk space with increasing number of registered items. To provide enough processing power for all Docker containers, we recommend using a 64bit quad core processor or better.
 
 ### 3.2 Software
 
@@ -43,14 +43,24 @@ In this section, we will provide some guidance as to recommendations for the num
 - **Maven**: Maven 3.6.3 or later should be installed in your local environment to build the docker image (execute `mvn -version` to check the successful installation).
 
 ## 4  Installation Guide
-This part aims to aid IT administrators or developers in the installation of the IDS Metadata Broker. Metadata Broker is still actively maintained by Fraunhofer IAIS. If any problem arises while following the installation guide, please get in touch with the email provided at the end of this file.
+This part aims to aid IT administrators or developers in the installation of the Metadata Registry. Metadata Registry is still actively maintained by Fraunhofer IAIS. If any problem arises while following the installation guide, please get in touch with the email provided at the end of this file.
 
 ### 4.1 Prepare The SSL Certificate
 For the SSL certificate, you need to have these two files:
--  **server.crt:** an x509 certificate, either self-signed or from an official CA
+- **server.crt:** an x509 certificate, either self-signed or from an official CA
 - **server.key:** the private key for the certificate.
 
-The certificate needs to be of *.crt* format and must have the name *server.crt* and the file for private key should have the name *server.key*. In case your certificate is of *.pem* format, it can be converted with the following commands, which require OpenSSL to be installed:
+The certificate needs to be of *.crt* format and must have the name *server.crt* and the file for private key should have the name *server.key*. Here is a sample command to create a self-signed certificate, which requires OpenSSL to be installed:
+
+openssl req -newkey rsa:4096 \
+            -x509 \
+            -sha256 \
+            -days 3650 \
+            -nodes \
+            -out server.crt \
+            -keyout server.key
+
+In case your certificate is in *.pem* format, it can be converted with the following commands:
 
 			openssl x509 -in mycert.pem -out server.crt
 			openssl rsa -in mykey.pem -out server.key
@@ -58,11 +68,11 @@ The certificate needs to be of *.crt* format and must have the name *server.crt*
 			mv server.crt cert/
 			mv server.key cert/
 
-### 4.2 Running The Broker
-To run the broker you can either make use of docker images provided by us as shown in **Section 4.2.1** 
+### 4.2 Running The Metadata Registry
+To run the Metadata Registry you can either make use of docker images provided by us as shown in **Section 4.2.1** or build your customized docker as shown in **Section 4.2.2**.
 
-#### 4.2.1 Running The Broker With Provided Image
-If you want to run the broker with the provided image please follow the following steps:
+#### 4.2.1 Running The Metadata Registry With Provided Image
+If you want to run the Metadata Registry with the provided image please follow the following steps:
 
 **Step 1: Clone the repository**
 
@@ -74,15 +84,14 @@ Once the repository is cloned, the docker-compose file will be found in this pat
 
 	`./docker/composefiles/broker-localhost/docker-compose.yml`
 
+**Step 2.1** Please put the SSL certificate (server.key and server.crt) and the DAPS certificate, for example "isst-broker.jks"; under the same folder which will be mounted in container. 
 
-
-
-The most crucial part of adapting the configuration is to provide the correct location of the X.509 certificate created above in the broker-reverseproxy service.
+**Step 2.2** Provide the correct location of the X.509 certificate created above in the "broker-reverseproxy" and "broker-core" services.
 
 **For Linux users:**  if the location of the certificate is *“/home/ids/cert”*, the corresponding configuration in the yml file is:
 
 	services: broker-reverseproxy:
-		image: registry.gitlab.cc-asp.fraunhofer.de:4567/eis-ids/broker/reverseproxy
+		image: registry.gitlab.cc-asp.fraunhofer.de/eis-ids/metadata-registry/reverseproxy:1.0.2
 		volumes:
 		- /home/ids/cert:/etc/cert/
 		[…]
@@ -93,42 +102,53 @@ The most crucial part of adapting the configuration is to provide the correct lo
 
 
 	services: broker-reverseproxy:
-		image: registry.gitlab.cc-asp.fraunhofer.de:4567/eis-ids/broker/reverseproxy
+		image: registry.gitlab.cc-asp.fraunhofer.de/eis-ids/metadata-registry/reverseproxy:1.0.2
 		volumes:
 		- c:/etc/ids/cert:/etc/cert/
 		[…]
+Do the same for "broker-core" service.
+
+**Step 2.3** After successful completion of the previous steps, the location of the certificates is mounted to "/etc/cert" of the container. If the name of your DAPS certificate is "isstbroker-keystore.jks", please change the following line in the docker-compose file:
+ 
+
+
+	environment:
+		[…]
+		- IDENTITY_JAVAKEYSTORE=/etc/cert/isstbroker-keystore.jks
+	
+Please note: only adapt the name of your certificate in the line.
 
 **Step 3: Download the docker images**
 
-All the IDS Metadata Broker Docker images are hosted at the GitLab of Fraunhofer IAIS. No credentials needed to download the images. The following command is for pulling all docker images:
+All the IDS Metadata Registry Docker images are hosted at the GitLab of Fraunhofer IAIS. No credentials needed to download the images. The following command is for pulling all docker images:
 
 		docker-compose pull
 
 Note that this command should be executed in the same path of docker-compose.yml file.
 
 
-**Step 4: Start up the IDS Metadata Broker**
+**Step 4: Start up the IDS Metadata Registry**
 
-To start up the IDS Metadata Broker, run the following command inside the directory of the docker-compose.yml file:
+To start up the IDS Metadata Registry, run the following command inside the directory of the docker-compose.yml file:
 
 		docker-compose up –d
 
 
 
-This process can take several minutes to complete. You can test whether the IDS Metadata Broker has successfully started by opening [https://localhost](https://localhost/). The result should be a JSON document, providing some general metadata about the IDS Metadata Broker.
+This process can take several minutes to complete. You can test whether the IDS Metadata Registry has successfully started by opening [https://localhost](https://localhost/). The result should be a JSON document, providing some general metadata about the IDS Metadata Registry.
 
 Furthermore, the docker-compose logs command can be used to access the logs for a docker-compose.yml file, see [here](https://docs.docker.com/compose/reference/logs/).
 
 
-**Step 5: Stop the IDS Metadata Broker**
+**Step 5: Stop the IDS Metadata Registry**
 
-To stop the Broker, run the following in the terminal in the same path as the docker-compose.yml file:
+To stop the Metadata Registry, run the following in the terminal in the same path as the docker-compose.yml file:
 
 		docker-compose down
 
-**Step 6: Update the IDS Metadata Broker**
+**Step 6: Update the IDS Metadata Registry**
 
-To update an existing installation of the IDS Metadata Broker, first repeat the steps explained in **Step 3**. Containers can be either hot updated or restarted to apply the changes. To hot update a container, run the following command:
+To update an existing installation of the IDS Metadata Registry, first repeat the steps explained in **Step 3**. Containers can be either hot updated or restarted to apply the changes. To hot update a container, run the following command:
 
 		docker-compose up -d --no-deps --build <container name>
 
@@ -145,5 +165,5 @@ Alternatively, one can restart the entire service by running:
 
 ## Contact
 
-*  Fraunhofer IAIS: [Najmehsadat Mousavinezhad](mailto:najmehsadat.mousavinezhad@iais.fraunhofer.de), [Tasneem Tazeen Rashid](mailto:tasneem.tazeen.rashid@iais.fraunhofer.de), [Tejas Morbagal Harish](mailto:tejas.morbagal.harish@iais.fraunhofer.de)
-* or create an issue
+*  Fraunhofer IAIS: [Najmehsadat Mousavinezhad](mailto:najmehsadat.mousavinezhad@iais.fraunhofer.de), [Tasneem Tazeen Rashid](mailto:tasneem.tazeen.rashid@iais.fraunhofer.de)
+*  or create an issue
