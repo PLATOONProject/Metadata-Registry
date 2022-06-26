@@ -1,18 +1,18 @@
 version: '3'
 services:
   broker-reverseproxy:
-    image: registry.gitlab.cc-asp.fraunhofer.de/eis-ids/broker-open/reverseproxy
+    image: registry.gitlab.cc-asp.fraunhofer.de/eis-ids/metadata-registry/reverseproxy:1.0.2
     volumes:
-     - /etc/idscert/localhost:/etc/cert/
+     - ./cert:/etc/cert/
     # - c:/etc/idscert/localhost:/etc/cert/
     ports:
     - "443:443" # IDS-HTTP API
     - "80:80"
 
   broker-core:
-    image: registry.gitlab.cc-asp.fraunhofer.de/eis-ids/broker-open/core:latest
+    image: registry.gitlab.cc-asp.fraunhofer.de/eis-ids/metadata-registry/core:1.0.2
     volumes:
-      - /etc/idscert/localhost:/etc/cert/
+      - ./cert:/etc/cert/
       #- c:/etc/idscert/localhost:/etc/cert/
     restart: always
     environment:
@@ -20,7 +20,7 @@ services:
     - ELASTICSEARCH_HOSTNAME=broker-elasticsearch
     - SHACL_VALIDATION=true
     - DAPS_VALIDATE_INCOMING=true
-    - IDENTITY_JAVAKEYSTORE=isstbroker-keystore.jks
+    - IDENTITY_JAVAKEYSTORE=/etc/cert/isstbroker-keystore.jks
     - COMPONENT_URI=https://localhost/
     - COMPONENT_CATALOGURI=https://localhost/connectors/
     - JWKS_TRUSTEDHOSTS=daps.aisec.fraunhofer.de,omejdn
@@ -28,7 +28,7 @@ services:
     - "8080"
 
   broker-fuseki:
-    image: registry.gitlab.cc-asp.fraunhofer.de/eis-ids/broker-open/fuseki
+    image: registry.gitlab.cc-asp.fraunhofer.de/eis-ids/metadata-registry/fuseki:1.0.2
     volumes:
       - broker-fuseki:/fuseki
     expose:
