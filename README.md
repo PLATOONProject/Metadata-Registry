@@ -52,13 +52,14 @@ For the SSL certificate, you need to have these two files:
 
 The certificate needs to be of *.crt* format and must have the name *server.crt* and the file for private key should have the name *server.key*. Here is a sample command to create a self-signed certificate, which requires OpenSSL to be installed:
 
+```sh
 openssl req -newkey rsa:4096 \
             -x509 \
             -sha256 \
             -days 3650 \
             -nodes \
             -out server.crt \
-            -keyout server.key
+ ```
 
 In case your certificate is in *.pem* format, it can be converted with the following commands:
 
